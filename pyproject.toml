@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trendoris"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "aiosqlite>=0.20",
+    "httpx>=0.27",
+    "anthropic>=0.28",
+    "pytrends>=4.9",
+    "praw>=7.7",
+    "apscheduler>=3.10",
+    "python-dotenv>=1.0",
+    "pydantic-settings>=2.2",
+    "tenacity>=8.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "httpx"]
+
+[tool.setuptools.packages.find]
+include = ["trendoris*"]
