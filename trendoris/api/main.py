@@ -1,15 +1,18 @@
+"""FastAPI server — webhooky, manualne spustanie jobov, health check."""
 import base64
 import hashlib
 import hmac
 import html
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+import httpx
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 
 from trendoris.agents import catalog_manager, order_agent
@@ -95,34 +98,9 @@ async def dashboard() -> str:
     mock_badge = "<span class='badge mock'>MOCK MODE</span>" if settings.mock_mode else ""
 
     return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Trendoriuso Dashboard</title>
-<style>
-body{{background:#0e1116;color:#e8eaed;font:15px system-ui;padding:32px}}
-h1{{font-size:26px}} h2{{font-size:13px;color:#8b93a1;margin:24px 0 8px;text-transform:uppercase}}
-.badge.mock{{background:#5b4a14;color:#ffd54d;padding:3px 10px;border-radius:99px;font-size:11px;margin-left:10px}}
-table{{width:100%;border-collapse:collapse;background:#171c24;border-radius:12px}}
-th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid #232a35}}
-th{{color:#8b93a1;font-size:12px;text-transform:uppercase}}
-.empty{{color:#8b93a1;text-align:center;padding:24px}}
-button{{background:#27c08d;color:#08130e;border:0;padding:10px 20px;border-radius:8px;font-weight:600;cursor:pointer;margin-right:12px}}
-</style></head><body>
+<html><head><meta charset="utf-8"><title>Trendoriuso Dashboard</title></head><body>
 <h1>Trendoriuso {mock_badge}</h1>
-<div style="margin:16px 0">
-<button onclick="run('/admin/refresh-catalog')">Refresh katalog</button>
-<button onclick="run('/admin/sync-tracking')">Sync tracking</button>
-</div>
-<h2>Katalog ({len(products)} produktov)</h2>
-<table><tr><th>Produkt</th><th>Trend</th><th>Skore</th><th>Cena</th></tr>{product_rows}</table>
-<h2>Trendy</h2>
-<table><tr><th>Keyword</th><th>Skore</th><th>Zachyteny</th></tr>{trend_rows}</table>
-<h2>Objednavky</h2>
-<table><tr><th>Shopify ID</th><th>Stav</th><th>Suma</th><th>Tracking</th></tr>{order_rows}</table>
-<script>
-async function run(path){{
-  event.target.disabled=true; event.target.textContent='...';
-  await fetch(path,{{method:'POST'}}); location.reload();
-}}
-</script></body></html>"""
+</body></html>"""
 
 
 @app.post("/webhooks/shopify/orders-paid")
@@ -156,7 +134,6 @@ async def shopify_callback(
     host: str = Query(default=""),
 ) -> JSONResponse:
     """Shopify OAuth callback -- vymeni code za permanent access token."""
-    import os
     client_id = os.environ.get("SHOPIFY_API_KEY", "")
     client_secret = os.environ.get("SHOPIFY_API_SECRET", "")
     if not client_id or not client_secret:
