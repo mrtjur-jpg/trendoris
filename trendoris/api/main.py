@@ -145,3 +145,30 @@ async def manual_refresh() -> dict:
 async def manual_tracking_sync() -> dict:
     updated = await order_agent.sync_tracking()
     return {"updated": updated}
+
+
+@app.get("/shopify/callback")
+async def shopify_callback(
+    code: str = Query(...),
+    shop: str = Query(...),
+    state: str = Query(default=""),
+    timestamp: str = Query(default=""),
+    host: str = Query(default=""),
+) -> JSONResponse:
+    """Shopify OAuth callback -- vymeni code za permanent access token."""
+    import os
+    client_id = os.environ.get("SHOPIFY_API_KEY", "")
+    client_secret = os.environ.get("SHOPIFY_API_SECRET", "")
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=503, detail="SHOPIFY_API_KEY/SECRET nie su nastavene")
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"https://{shop}/admin/oauth/access_token",
+            json={"client_id": client_id, "client_secret": client_secret, "code": code},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    data = resp.json()
+    access_token = data.get("access_token", "")
+    logger.info("Shopify token pre shop=%s: %s...", shop, access_token[:8])
+    return JSONResponse({"access_token": access_token, "scope": data.get("scope", ""), "shop": shop})
