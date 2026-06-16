@@ -1,13 +1,14 @@
-"""Product Matching Agent — Claude AI vyberá najlepší produkt a píše copy.
+"""Product Matching Agent — Gemini AI vyberá najlepší produkt a píše copy.
 
 Tok:
   1. Trend keyword -> CJ search -> kandidáti
-  2. Claude vyberie najlepšieho kandidáta (alebo zamietne všetkých)
-  3. Claude vygeneruje predajný titulok, popis (HTML) a odporučí cenu
+  2. Gemini vyberie najvhodnejšieho kandidáta (alebo zamietne všetkých)
+  3. Gemini vygeneruje predajný titulok, popis (HTML) a odporučí cenu
 """
+import json
 import logging
 
-import anthropic
+import google.generativeai as genai
 from pydantic import BaseModel
 
 from trendoris.agents.trend_agent import TrendCandidate
@@ -16,7 +17,7 @@ from trendoris.services.cj_client import CJProduct, cj_client
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-4-8"
+MODEL = "gemini-1.5-flash"
 
 # Minimálna marža: predajná cena = nákupná * MARKUP, zaokrúhlené na .99
 MARKUP = 2.8
@@ -45,36 +46,35 @@ class MatchedProduct(BaseModel):
     image_urls: list = []  # min 3 obrázky z CJ
 
 
-_client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+def _model() -> genai.GenerativeModel:
+    genai.configure(api_key=settings.gemini_api_key)
+    return genai.GenerativeModel(
+        MODEL,
+        generation_config={"response_mime_type": "application/json"},
+    )
 
 
 async def _select_best(keyword: str, candidates: list[CJProduct]) -> CJProduct | None:
-    """Claude vyberie najvhodnejší produkt pre daný trend."""
+    """Gemini vyberie najvhodnejší produkt pre daný trend."""
     catalog = "\n".join(
         f"- pid={c.pid} | {c.name} | cena ${c.sell_price:.2f} | listingov: {c.list_count}"
         for c in candidates
     )
-    response = await _client.messages.parse(
-        model=MODEL,
-        max_tokens=2048,
-        thinking={"type": "adaptive"},
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Trending vyhľadávanie: \"{keyword}\"\n\n"
-                f"Kandidáti od dodávateľa (CJ Dropshipping):\n{catalog}\n\n"
-                "Vyber JEDEN produkt ktorý najlepšie zodpovedá trendu a má najväčší "
-                "predajný potenciál pre európsky dropshipping e-shop (zváž cenu, "
-                "popularitu = listingov, a relevanciu k trendu). "
-                "Ak žiadny kandidát nezodpovedá trendu alebo všetky vyzerajú nekvalitne, "
-                "vráť selected_pid=null."
-            ),
-        }],
-        output_format=ProductSelection,
+    prompt = (
+        f"Trending vyhľadávanie: \"{keyword}\"\n\n"
+        f"Kandidáti od dodávateľa (CJ Dropshipping):\n{catalog}\n\n"
+        "Vyber JEDEN produkt ktorý najlepšie zodpovedá trendu a má najväčší "
+        "predajný potenciál pre európsky dropshipping e-shop (zváž cenu, "
+        "popularitu = listingov, a relevanciu k trendu). "
+        "Ak žiadny kandidát nezodpovedá trendu, vráť selected_pid ako null.\n\n"
+        'Odpoveď musí byť JSON: {"selected_pid": "...", "reasoning": "..."}'
     )
-    selection = response.parsed_output
-    if selection is None or selection.selected_pid is None:
-        logger.info("Claude zamietol všetkých kandidátov pre '%s'", keyword)
+    response = await _model().generate_content_async(prompt)
+    data = json.loads(response.text)
+    selection = ProductSelection(**data)
+
+    if selection.selected_pid is None:
+        logger.info("Gemini zamietol všetkých kandidátov pre '%s'", keyword)
         return None
     chosen = next((c for c in candidates if c.pid == selection.selected_pid), None)
     if chosen:
@@ -83,40 +83,30 @@ async def _select_best(keyword: str, candidates: list[CJProduct]) -> CJProduct |
 
 
 async def _generate_copy(product: CJProduct, keyword: str) -> ProductCopy:
-    """Claude napíše predajný titulok + HTML popis + cenu."""
+    """Gemini napíše predajný titulok + HTML popis + cenu."""
     floor_price = product.sell_price * MARKUP
-    response = await _client.messages.parse(
-        model=MODEL,
-        max_tokens=4096,
-        thinking={"type": "adaptive"},
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Produkt z trendu \"{keyword}\":\n"
-                f"Názov dodávateľa: {product.name}\n"
-                f"Popis dodávateľa: {product.description[:2000]}\n"
-                f"Nákupná cena: ${product.sell_price:.2f}\n\n"
-                "Napíš pre e-shop Trendoriuso (moderný EU dropshipping obchod):\n"
-                "1. title — chytľavý anglický titulok, max 70 znakov, bez emoji\n"
-                "2. description_html — predajný popis v HTML (h3 nadpisy, ul benefity, "
-                "p odseky), 150-250 slov, anglicky, dôraz na benefity nie parametre\n"
-                f"3. suggested_price_eur — psychologická cena končiaca .99, "
-                f"minimálne {floor_price:.2f} EUR (pokrýva nákup + maržu)"
-            ),
-        }],
-        output_format=ProductCopy,
+    prompt = (
+        f"Produkt z trendu \"{keyword}\":\n"
+        f"Názov dodávateľa: {product.name}\n"
+        f"Popis dodávateľa: {product.description[:2000]}\n"
+        f"Nákupná cena: ${product.sell_price:.2f}\n\n"
+        "Napíš pre e-shop Trendoriuso (moderný EU dropshipping obchod):\n"
+        "Odpoveď musí byť JSON s týmito poľami:\n"
+        "- title: chytľavý anglický titulok, max 70 znakov, bez emoji\n"
+        "- description_html: predajný popis v HTML (h3 nadpisy, ul benefity, "
+        "p odseky), 150-250 slov, anglicky, dôraz na benefity nie parametre\n"
+        f"- suggested_price_eur: psychologická cena končiaca .99, minimálne {floor_price:.2f} EUR"
     )
-    copy = response.parsed_output
-    if copy is None:
-        raise RuntimeError(f"Copywriting zlyhal pre {product.pid}")
-    # Bezpečnostná poistka na maržu — Claude mohol navrhnúť nižšiu cenu
+    response = await _model().generate_content_async(prompt)
+    data = json.loads(response.text)
+    copy = ProductCopy(**data)
     if copy.suggested_price_eur < floor_price:
         copy.suggested_price_eur = round(floor_price) + 0.99
     return copy
 
 
 def _mock_match(candidate: TrendCandidate, cj_products: list[CJProduct]) -> MatchedProduct:
-    """Mock režim — bez Claude: vyber najpopulárnejší produkt + šablónové copy."""
+    """Mock režim — bez Gemini: vyber najpopulárnejší produkt + šablónové copy."""
     chosen = max(cj_products, key=lambda c: c.list_count)
     price = round(chosen.sell_price * MARKUP) + 0.99
     return MatchedProduct(
