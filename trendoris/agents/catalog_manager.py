@@ -7,6 +7,7 @@ Denný refresh:
   4. Pridaj ich do Shopify + DB
   5. Zmaž rovnaký počet najstarších/najslabších produktov (ak katalóg presahuje limit)
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -56,6 +57,7 @@ async def daily_refresh() -> dict:
                 matched = await product_agent.match_trend_to_product(candidate)
             except Exception:
                 logger.exception("Match zlyhal pre '%s'", candidate.keyword)
+                await asyncio.sleep(5)
                 continue
             if matched is None:
                 continue
@@ -87,6 +89,7 @@ async def daily_refresh() -> dict:
             ))
             await db.commit()
             added.append(matched.title)
+            await asyncio.sleep(5)
 
         # 5. Odstráň prebytočné — najstaršie s najnižším trend skóre
         active_count = (await db.execute(
