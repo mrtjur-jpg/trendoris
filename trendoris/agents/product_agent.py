@@ -18,7 +18,7 @@ from trendoris.services.cj_client import CJProduct, cj_client
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.0-flash-lite"
 
 # Minimálna marža: predajná cena = nákupná * MARKUP, zaokrúhlené na .99
 MARKUP = 2.8
