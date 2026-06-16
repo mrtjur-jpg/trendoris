@@ -1,6 +1,6 @@
 """CJ Dropshipping API klient (https://developers.cjdropshipping.com).
 
-AutentifikÃ¡cia: API key -> access token (platÃ­ 15 dnÃ­, refreshujeme pri 401).
+AutentifikÃÂ¡cia: API key -> access token (platÃÂ­ 15 dnÃÂ­, refreshujeme pri 401).
 """
 import logging
 from dataclasses import dataclass
@@ -21,9 +21,20 @@ class CJProduct:
     name: str
     sell_price: float
     image_url: str
-    image_urls: list  # vÅ¡etky obrÃ¡zky produktu (min 1, ideÃ¡lne 3+)
+    image_urls: list  # vÃÂ¡etky obrÃÂ¡zky produktu (min 1, ideÃÂ¡lne 3+)
     description: str
-    list_count: int  # poÄet listingov = proxy popularity
+    list_count: int  # poÃÂet listingov = proxy popularity
+
+
+def _parse_price(value) -> float:
+    """CJ niekedy vracia cenu ako rozsah '2.02 -- 2.72' — berieme minimum."""
+    if not value:
+        return 0.0
+    s = str(value).split("--")[0].strip()
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
 
 
 class CJClient:
@@ -49,7 +60,7 @@ class CJClient:
         token = await self._ensure_token()
         resp = await self._client.get(path, params=params, headers={"CJ-Access-Token": token})
         if resp.status_code == 401:
-            self._token = None  # token expiroval â ÄalÅ¡Ã­ retry si vypÃ½ta novÃ½
+            self._token = None  # token expiroval Ã¢ÂÂ ÃÂalÃÂ¡ÃÂ­ retry si vypÃÂ½ta novÃÂ½
             resp.raise_for_status()
         resp.raise_for_status()
         return resp.json()
@@ -65,7 +76,7 @@ class CJClient:
         return resp.json()
 
     async def search_products(self, keyword: str, limit: int = 10) -> list[CJProduct]:
-        """VyhÄ¾adÃ¡ produkty podÄ¾a keywordu, zoradenÃ© podÄ¾a popularity."""
+        """VyhÃÂ¾adÃÂ¡ produkty podÃÂ¾a keywordu, zoradenÃÂ© podÃÂ¾a popularity."""
         data = await self._get("/product/list", {
             "productNameEn": keyword,
             "pageSize": limit,
@@ -88,7 +99,7 @@ class CJClient:
             products.append(CJProduct(
                 pid=item["pid"],
                 name=item.get("productNameEn", ""),
-                sell_price=float(item.get("sellPrice", 0) or 0),
+                sell_price=_parse_price(item.get("sellPrice", 0)),
                 image_url=image_url,
                 image_urls=image_urls,
                 description=item.get("description", "") or "",
@@ -101,7 +112,7 @@ class CJClient:
         return data.get("data", {})
 
     async def get_product_images(self, pid: str) -> list:
-        """VrÃ¡ti vÅ¡etky obrÃ¡zky produktu (min 3) z detail endpointu CJ."""
+        """VrÃÂ¡ti vÃÂ¡etky obrÃÂ¡zky produktu (min 3) z detail endpointu CJ."""
         try:
             detail = await self.get_product_detail(pid)
             img_set = detail.get("productImageSet", [])
@@ -116,7 +127,7 @@ class CJClient:
                 imgs = [main] + imgs
             return imgs[:8]
         except Exception:
-            logger.warning("Nepodarilo sa zÃ­skaÅ¥ obrÃ¡zky pre pid=%s", pid)
+            logger.warning("Nepodarilo sa zÃÂ­skaÃÂ¥ obrÃÂ¡zky pre pid=%s", pid)
             return []
 
     async def create_order(
@@ -131,7 +142,7 @@ class CJClient:
         vid: str,
         quantity: int,
     ) -> str:
-        """VytvorÃ­ objednÃ¡vku u CJ. VracÃ­a CJ order ID."""
+        """VytvorÃÂ­ objednÃÂ¡vku u CJ. VracÃÂ­a CJ order ID."""
         data = await self._post("/shopping/order/createOrderV2", {
             "orderNumber": order_number,
             "shippingCountryCode": shipping_country_code,
