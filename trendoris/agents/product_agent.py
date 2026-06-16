@@ -8,7 +8,8 @@ Tok:
 import json
 import logging
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pydantic import BaseModel
 
 from trendoris.agents.trend_agent import TrendCandidate
@@ -17,7 +18,7 @@ from trendoris.services.cj_client import CJProduct, cj_client
 
 logger = logging.getLogger(__name__)
 
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-2.0-flash"
 
 # Minimálna marža: predajná cena = nákupná * MARKUP, zaokrúhlené na .99
 MARKUP = 2.8
@@ -46,12 +47,8 @@ class MatchedProduct(BaseModel):
     image_urls: list = []  # min 3 obrázky z CJ
 
 
-def _model() -> genai.GenerativeModel:
-    genai.configure(api_key=settings.gemini_api_key)
-    return genai.GenerativeModel(
-        MODEL,
-        generation_config={"response_mime_type": "application/json"},
-    )
+def _client() -> genai.Client:
+    return genai.Client(api_key=settings.gemini_api_key)
 
 
 async def _select_best(keyword: str, candidates: list[CJProduct]) -> CJProduct | None:
@@ -69,7 +66,12 @@ async def _select_best(keyword: str, candidates: list[CJProduct]) -> CJProduct |
         "Ak žiadny kandidát nezodpovedá trendu, vráť selected_pid ako null.\n\n"
         'Odpoveď musí byť JSON: {"selected_pid": "...", "reasoning": "..."}'
     )
-    response = await _model().generate_content_async(prompt)
+    client = _client()
+    response = await client.aio.models.generate_content(
+        model=MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
     data = json.loads(response.text)
     selection = ProductSelection(**data)
 
@@ -97,7 +99,12 @@ async def _generate_copy(product: CJProduct, keyword: str) -> ProductCopy:
         "p odseky), 150-250 slov, anglicky, dôraz na benefity nie parametre\n"
         f"- suggested_price_eur: psychologická cena končiaca .99, minimálne {floor_price:.2f} EUR"
     )
-    response = await _model().generate_content_async(prompt)
+    client = _client()
+    response = await client.aio.models.generate_content(
+        model=MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json"),
+    )
     data = json.loads(response.text)
     copy = ProductCopy(**data)
     if copy.suggested_price_eur < floor_price:
