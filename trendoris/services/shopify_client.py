@@ -31,7 +31,7 @@ class ShopifyClient:
         image_urls: list,
         tags: str = "trendoriuso-auto",
     ) -> str:
-        """Vytvorí produkt s viacerými obrázkami, vracia Shopify product ID."""
+        """VytvorÃ­ produkt s viacerÃ½mi obrÃ¡zkami, vracia Shopify product ID."""
         images = [{"src": url} for url in image_urls if url]
         resp = await self._client.post("/products.json", json={
             "product": {
@@ -43,13 +43,15 @@ class ShopifyClient:
                 "images": images,
                 "variants": [{
                     "price": f"{price:.2f}",
-                    "inventory_management": None,  # dropshipping — nesledujeme sklad
+                    "inventory_management": None,  # dropshipping â nesledujeme sklad
                 }],
             }
         })
+        if not resp.is_success:
+            logger.error("Shopify 422 detail: %s", resp.text[:500])
         resp.raise_for_status()
         product_id = str(resp.json()["product"]["id"])
-        logger.info("Shopify produkt vytvorený: %s (%s)", title, product_id)
+        logger.info("Shopify produkt vytvorenÃ½: %s (%s)", title, product_id)
         return product_id
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10))
@@ -57,7 +59,7 @@ class ShopifyClient:
         resp = await self._client.delete(f"/products/{product_id}.json")
         if resp.status_code not in (200, 404):
             resp.raise_for_status()
-        logger.info("Shopify produkt zmazaný: %s", product_id)
+        logger.info("Shopify produkt zmazanÃ½: %s", product_id)
 
     async def list_products(self, limit: int = 250) -> list[dict]:
         resp = await self._client.get("/products.json", params={"limit": limit})
@@ -70,12 +72,12 @@ class ShopifyClient:
         return resp.json()["order"]
 
     async def add_tracking(self, order_id: str, tracking_number: str) -> None:
-        """Vytvorí fulfillment s tracking číslom."""
+        """VytvorÃ­ fulfillment s tracking ÄÃ­slom."""
         resp = await self._client.get(f"/orders/{order_id}/fulfillment_orders.json")
         resp.raise_for_status()
         fulfillment_orders = resp.json().get("fulfillment_orders", [])
         if not fulfillment_orders:
-            logger.warning("Objednávka %s nemá fulfillment orders", order_id)
+            logger.warning("ObjednÃ¡vka %s nemÃ¡ fulfillment orders", order_id)
             return
 
         fo_id = fulfillment_orders[0]["id"]
@@ -90,7 +92,7 @@ class ShopifyClient:
             }
         })
         resp.raise_for_status()
-        logger.info("Tracking %s pridaný k objednávke %s", tracking_number, order_id)
+        logger.info("Tracking %s pridanÃ½ k objednÃ¡vke %s", tracking_number, order_id)
 
     async def close(self) -> None:
         await self._client.aclose()
