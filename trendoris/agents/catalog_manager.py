@@ -1,11 +1,11 @@
-"""Catalog Manager — "living catalog" logika.
+"""Catalog Manager â "living catalog" logika.
 
-Denný refresh:
+DennÃ½ refresh:
   1. Zozbieraj trendy (trend_agent)
-  2. Vyfiltruj keywordy ktoré už v katalógu máme
-  3. Pre top N nových trendov nájdi produkty (product_agent)
+  2. Vyfiltruj keywordy ktorÃ© uÅ¾ v katalÃ³gu mÃ¡me
+  3. Pre top N novÃ½ch trendov nÃ¡jdi produkty (product_agent)
   4. Pridaj ich do Shopify + DB
-  5. Zmaž rovnaký počet najstarších/najslabších produktov (ak katalóg presahuje limit)
+  5. ZmaÅ¾ rovnakÃ½ poÄet najstarÅ¡Ã­ch/najslabÅ¡Ã­ch produktov (ak katalÃ³g presahuje limit)
 """
 import asyncio
 import logging
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 async def daily_refresh() -> dict:
-    """Hlavný denný job. Vracia súhrn pre logy/API."""
+    """HlavnÃ½ dennÃ½ job. Vracia sÃºhrn pre logy/API."""
     added: list[str] = []
     removed: list[str] = []
 
@@ -31,12 +31,12 @@ async def daily_refresh() -> dict:
         # 1. Trendy
         candidates = await trend_agent.collect_trends()
 
-        # Ulož signály do histórie
+        # UloÅ¾ signÃ¡ly do histÃ³rie
         for c in candidates[:50]:
             db.add(TrendSignal(keyword=c.keyword, score=c.score, source=c.source))
         await db.commit()
 
-        # 2. Vyfiltruj keywordy ktoré už máme aktívne
+        # 2. Vyfiltruj keywordy ktorÃ© uÅ¾ mÃ¡me aktÃ­vne
         existing_keywords = set(
             (await db.execute(
                 select(Product.trend_keyword).where(Product.active == True)  # noqa: E712
@@ -44,7 +44,7 @@ async def daily_refresh() -> dict:
         )
         fresh = [c for c in candidates if c.keyword not in existing_keywords]
 
-        # 3+4. Pridaj produkty — ak sme pod catalog_size, doplníme po max
+        # 3+4. Pridaj produkty â ak sme pod catalog_size, doplnÃ­me po max
         active_now = (await db.execute(
             select(func.count()).select_from(Product).where(Product.active == True)  # noqa: E712
         )).scalar_one()
@@ -60,9 +60,10 @@ async def daily_refresh() -> dict:
                 await asyncio.sleep(5)
                 continue
             if matched is None:
+                await asyncio.sleep(6)
                 continue
 
-            # Duplicitný CJ produkt? (rovnaký pid už v katalógu)
+            # DuplicitnÃ½ CJ produkt? (rovnakÃ½ pid uÅ¾ v katalÃ³gu)
             dup = (await db.execute(
                 select(Product).where(Product.cj_pid == matched.cj_product["pid"])
             )).scalar_one_or_none()
@@ -91,7 +92,7 @@ async def daily_refresh() -> dict:
             added.append(matched.title)
             await asyncio.sleep(5)
 
-        # 5. Odstráň prebytočné — najstaršie s najnižším trend skóre
+        # 5. OdstrÃ¡Å prebytoÄnÃ© â najstarÅ¡ie s najniÅ¾Å¡Ã­m trend skÃ³re
         active_count = (await db.execute(
             select(func.count()).select_from(Product).where(Product.active == True)  # noqa: E712
         )).scalar_one()
@@ -117,5 +118,5 @@ async def daily_refresh() -> dict:
             await db.commit()
 
     summary = {"added": added, "removed": removed, "trends_collected": len(candidates)}
-    logger.info("Denný refresh hotový: +%d / -%d", len(added), len(removed))
+    logger.info("DennÃ½ refresh hotovÃ½: +%d / -%d", len(added), len(removed))
     return summary
