@@ -1,10 +1,10 @@
-"""Trend Agent — denne zbiera trending produkty z viacerých zdrojov.
+"""Trend Agent â denne zbiera trending produkty z viacerÃ½ch zdrojov.
 
 Zdroje:
-  - Google Trends (pytrends) — rastúce vyhľadávania v kategórii shopping
-  - Reddit (PRAW) — hot posty z produktových subredditov
+  - Google Trends (pytrends) â rastÃºce vyhÄ¾adÃ¡vania v kategÃ³rii shopping
+  - Reddit (PRAW) â hot posty z produktovÃ½ch subredditov
 
-Výstup: zoznam TrendCandidate (keyword + skóre + zdroj), uložený do trend_signals.
+VÃ½stup: zoznam TrendCandidate (keyword + skÃ³re + zdroj), uloÅ¾enÃ½ do trend_signals.
 """
 import asyncio
 import logging
@@ -14,7 +14,7 @@ from trendoris.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Subreddity kde sa objavujú virálne gadgety a produkty
+# Subreddity kde sa objavujÃº virÃ¡lne gadgety a produkty
 PRODUCT_SUBREDDITS = [
     "shutupandtakemymoney",
     "INEEEEDIT",
@@ -26,27 +26,45 @@ PRODUCT_SUBREDDITS = [
 # Seed keywords pre Google Trends related queries
 TREND_SEEDS = ["gadget", "viral product", "tiktok made me buy it", "home gadget"]
 
-# Fallback keywords — použije sa ak Google Trends aj Reddit zlyhajú (napr. cloud IP block)
+# Fallback keywords â pouÅ¾ije sa ak Google Trends aj Reddit zlyhajÃº (napr. cloud IP block)
 FALLBACK_KEYWORDS = [
+    # Smart home & tech
     "portable blender", "led strip lights", "magnetic phone mount",
-    "posture corrector", "mini projector", "smart plug wifi",
-    "neck massager", "kitchen gadget", "waterproof phone case",
-    "solar garden lights", "air fryer accessories", "wireless earbuds",
-    "cable organizer", "laptop stand", "bathroom organizer",
-    "car phone holder", "resistance bands", "cold brew coffee maker",
-    "reusable bags", "travel pillow",
+    "mini projector", "smart plug wifi", "wireless earbuds",
+    "laptop stand", "cable organizer", "ring light selfie",
+    "wireless charging pad", "smart door lock", "usb hub multiport",
+    "portable power bank", "bluetooth tracker", "noise cancelling headphones",
+    # Health & beauty
+    "posture corrector", "neck massager", "resistance bands",
+    "jade roller face", "electric foot massager", "hair removal laser",
+    "eye massager", "foam roller muscle", "teeth whitening kit",
+    "smart water bottle", "pulse oximeter", "digital thermometer",
+    # Kitchen & home
+    "kitchen gadget", "air fryer accessories", "bathroom organizer",
+    "cold brew coffee maker", "reusable bags", "solar garden lights",
+    "vacuum sealer food", "electric can opener", "dish drying rack",
+    "silicone baking mat", "kitchen scale digital", "spice rack organizer",
+    "over door organizer", "foldable laundry basket", "shower caddy",
+    # Car & outdoor
+    "car phone holder", "waterproof phone case", "travel pillow",
+    "camping lantern led", "portable car vacuum", "dashcam 4k",
+    "inflatable mattress camping", "collapsible water bottle",
+    "bike phone mount", "car seat organizer",
+    # Pet & kids
+    "automatic cat feeder", "dog gps tracker", "pet grooming glove",
+    "interactive dog toy", "cat water fountain",
 ]
 
 
 @dataclass
 class TrendCandidate:
     keyword: str
-    score: float  # 0-100, normalizované
+    score: float  # 0-100, normalizovanÃ©
     source: str   # google_trends | reddit | fallback
 
 
 def _fetch_google_trends() -> list[TrendCandidate]:
-    """Rastúce related queries pre seed keywords. Synchronné (pytrends nemá async)."""
+    """RastÃºce related queries pre seed keywords. SynchronnÃ© (pytrends nemÃ¡ async)."""
     from pytrends.request import TrendReq
 
     candidates: list[TrendCandidate] = []
@@ -72,11 +90,11 @@ def _fetch_google_trends() -> list[TrendCandidate]:
 
 
 def _fetch_reddit() -> list[TrendCandidate]:
-    """Hot posty z produktových subredditov — názov postu ~ produkt."""
+    """Hot posty z produktovÃ½ch subredditov â nÃ¡zov postu ~ produkt."""
     import praw
 
     if not settings.reddit_client_id:
-        logger.warning("Reddit credentials chýbajú — preskakujem")
+        logger.warning("Reddit credentials chÃ½bajÃº â preskakujem")
         return []
 
     candidates: list[TrendCandidate] = []
@@ -102,14 +120,14 @@ def _fetch_reddit() -> list[TrendCandidate]:
 
 
 async def collect_trends() -> list[TrendCandidate]:
-    """Spustí všetky zdroje paralelne (v thread pooli — sú synchrónne)."""
+    """SpustÃ­ vÅ¡etky zdroje paralelne (v thread pooli â sÃº synchrÃ³nne)."""
     if settings.mock_mode:
         from trendoris.services.mocks import MOCK_TRENDS
         candidates = [
             TrendCandidate(keyword=kw, score=95.0 - i * 7, source="mock")
             for i, kw in enumerate(MOCK_TRENDS)
         ]
-        logger.info("[MOCK] %d falošných trendov", len(candidates))
+        logger.info("[MOCK] %d faloÅ¡nÃ½ch trendov", len(candidates))
         return candidates
 
     loop = asyncio.get_event_loop()
@@ -121,12 +139,12 @@ async def collect_trends() -> list[TrendCandidate]:
 
     # Fallback: ak oba zdroje zlyhali (napr. Google blokuje cloud IP)
     if not merged:
-        logger.warning("Žiadne trendy zo živých zdrojov — používam fallback zoznam")
+        logger.warning("Å½iadne trendy zo Å¾ivÃ½ch zdrojov â pouÅ¾Ã­vam fallback zoznam")
         merged = [
             TrendCandidate(keyword=kw, score=80.0 - i * 2, source="fallback")
             for i, kw in enumerate(FALLBACK_KEYWORDS)
         ]
 
     merged.sort(key=lambda c: c.score, reverse=True)
-    logger.info("Zozbieraných %d trend kandidátov", len(merged))
+    logger.info("ZozbieranÃ½ch %d trend kandidÃ¡tov", len(merged))
     return merged
